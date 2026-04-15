@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="FrKey/FrKey.vcxproj" Id="93e4f490-f440-46c8-a4ce-a0399f5083b2" />
+</Solution>
