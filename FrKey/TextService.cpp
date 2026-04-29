@@ -125,12 +125,15 @@ STDMETHODIMP CTextService::OnSetFocus(BOOL fForeground) { return S_OK; }
 STDMETHODIMP CTextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten)
 {
     *pfEaten = FALSE;
-    // ── 0. 한/영 키(VK_HANGUL) 또는 텐키 .(VK_DECIMAL) 감지 → Win+Space 스푸핑으로 IME 전환 ──
-    // 코파일럿 키 탑재 노트북처럼 한/영 키가 없는 경우 텐키의 . 키를 대체 수단으로 사용
-    if (wParam == 0x15 || wParam == VK_DECIMAL)
+
+
     {
-        *pfEaten = TRUE;
-        return S_OK;
+        UINT sc = (lParam >> 16) & 0xFF;
+        if (wParam == 0x15 || wParam == VK_DECIMAL || sc == 110)
+        {
+            *pfEaten = TRUE;
+            return S_OK;
+        }
     }
 
     if (_palette.IsVisible())
@@ -146,50 +149,29 @@ STDMETHODIMP CTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lPar
 {
     *pfEaten = FALSE;
 
-    // ── 0. 한/영 키(VK_HANGUL) 또는 텐키 .(VK_DECIMAL) 감지 → Win+Space 스푸핑으로 IME 전환 ──
-    // 코파일럿 키 탑재 노트북처럼 한/영 키가 없는 경우 텐키의 . 키를 대체 수단으로 사용
-    if (wParam == 0x15 || wParam == VK_DECIMAL)
+    // ── 0. 한/영 키(VK_HANGUL) 또는 텐키 .(VK_DECIMAL / 스캔코드 110) 감지 → Win+Space 스푸핑 ──
+    // VK_DECIMAL 외에 스캔코드 110도 함께 확인 — 키보드 레이아웃에 따라 VK가 달라질 수 있음
     {
-        // 1. 현재 눌린 한/영 키는 대상 앱에 가지 않도록 우리가 먹어치웁니다.
-        *pfEaten = TRUE;
+        UINT sc = (lParam >> 16) & 0xFF;
+        if (wParam == 0x15 || wParam == VK_DECIMAL || sc == 110)
+        {
+            *pfEaten = TRUE;
 
-        // 2. 윈도우 시스템에 [Win + Space]를 연속으로 눌렀다 떼는 가짜 하드웨어 신호를 배열로 만듭니다.
-        INPUT inputs[4] = {};
+            struct AsyncSend {
+                static VOID CALLBACK Proc(HWND, UINT, UINT_PTR id, DWORD) {
+                    KillTimer(nullptr, id);
+                    INPUT ins[4] = {};
+                    ins[0].type = INPUT_KEYBOARD; ins[0].ki.wVk = VK_LWIN;
+                    ins[1].type = INPUT_KEYBOARD; ins[1].ki.wVk = VK_SPACE;
+                    ins[2].type = INPUT_KEYBOARD; ins[2].ki.wVk = VK_SPACE;  ins[2].ki.dwFlags = KEYEVENTF_KEYUP;
+                    ins[3].type = INPUT_KEYBOARD; ins[3].ki.wVk = VK_LWIN;   ins[3].ki.dwFlags = KEYEVENTF_KEYUP;
+                    SendInput(4, ins, sizeof(INPUT));
+                }
+            };
+            SetTimer(nullptr, 0, 0, AsyncSend::Proc);
 
-        // [Windows 키] 누름
-        inputs[0].type = INPUT_KEYBOARD;
-        inputs[0].ki.wVk = VK_LWIN;
-
-        // [Space 바] 누름
-        inputs[1].type = INPUT_KEYBOARD;
-        inputs[1].ki.wVk = VK_SPACE;
-
-        // [Space 바] 뗌
-        inputs[2].type = INPUT_KEYBOARD;
-        inputs[2].ki.wVk = VK_SPACE;
-        inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-
-        // [Windows 키] 뗌
-        inputs[3].type = INPUT_KEYBOARD;
-        inputs[3].ki.wVk = VK_LWIN;
-        inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
-
-        // TSF 잠금이 풀린 뒤에 입력이 처리되도록 비동기로 발송합니다.
-        // SendInput을 TSF 핸들러 안에서 동기 호출하면 재진입(re-entrancy) 위험이 있습니다.
-        struct AsyncSend {
-            static VOID CALLBACK Proc(HWND, UINT, UINT_PTR id, DWORD) {
-                KillTimer(nullptr, id);
-                INPUT ins[4] = {};
-                ins[0].type = INPUT_KEYBOARD; ins[0].ki.wVk = VK_LWIN;
-                ins[1].type = INPUT_KEYBOARD; ins[1].ki.wVk = VK_SPACE;
-                ins[2].type = INPUT_KEYBOARD; ins[2].ki.wVk = VK_SPACE;  ins[2].ki.dwFlags = KEYEVENTF_KEYUP;
-                ins[3].type = INPUT_KEYBOARD; ins[3].ki.wVk = VK_LWIN;   ins[3].ki.dwFlags = KEYEVENTF_KEYUP;
-                SendInput(4, ins, sizeof(INPUT));
-            }
-        };
-        SetTimer(nullptr, 0, 0, AsyncSend::Proc);
-
-        return S_OK;
+            return S_OK;
+        }
     }
 
     // ── 1. 팔레트가 열려있을 때 숫자 키(1~9) 선택 처리 ──
