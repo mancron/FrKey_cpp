@@ -111,8 +111,9 @@ STDMETHODIMP CTextService::OnSetFocus(BOOL fForeground) { return S_OK; }
 STDMETHODIMP CTextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten)
 {
     *pfEaten = FALSE;
-
-    if (wParam == 0x15)
+    // ── 0. 한/영 키(VK_HANGUL) 또는 텐키 .(VK_DECIMAL) 감지 → Win+Space 스푸핑으로 IME 전환 ──
+    // 코파일럿 키 탑재 노트북처럼 한/영 키가 없는 경우 텐키의 . 키를 대체 수단으로 사용
+    if (wParam == 0x15 || wParam == VK_DECIMAL)
     {
         *pfEaten = TRUE;
         return S_OK;
