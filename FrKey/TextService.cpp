@@ -4,7 +4,7 @@
 #include "ReadSession.h"
 
 
-CTextService::CTextService() : _cRef(1), _pThreadMgr(nullptr), _tid(TF_CLIENTID_NULL), _dwKeyEventSinkCookie(TF_INVALID_COOKIE)
+CTextService::CTextService() : _cRef(1), _pThreadMgr(nullptr), _tid(TF_CLIENTID_NULL), _lastChar(0)
 {
     InterlockedIncrement(&g_cRefDll);
 }
@@ -91,6 +91,8 @@ BOOL CTextService::_InitKeyEventSink()
 
 void CTextService::_UninitKeyEventSink()
 {
+    if (!_pThreadMgr) return;
+
     ITfKeystrokeMgr* pKeystrokeMgr = nullptr;
     HRESULT hr = _pThreadMgr->QueryInterface(IID_ITfKeystrokeMgr, (void**)&pKeystrokeMgr);
 
@@ -108,8 +110,20 @@ STDMETHODIMP CTextService::OnSetFocus(BOOL fForeground) { return S_OK; }
 
 STDMETHODIMP CTextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten)
 {
-    // 키가 눌리기 직전 검사하는 단계. 현재는 모두 통과(FALSE) 시킵니다.
     *pfEaten = FALSE;
+
+    if (wParam == 0x15)
+    {
+        *pfEaten = TRUE;
+        return S_OK;
+    }
+
+    if (_palette.IsVisible())
+    {
+        if ((wParam >= '1' && wParam <= '9') || wParam == VK_ESCAPE)
+            *pfEaten = TRUE;
+    }
+
     return S_OK;
 }
 
@@ -145,8 +159,20 @@ STDMETHODIMP CTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lPar
         inputs[3].ki.wVk = VK_LWIN;
         inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
 
-        // 3. OS에 신호 발사 (TSF 잠금을 무시하고 즉시 언어 교체 UI가 뜸)
-        SendInput(4, inputs, sizeof(INPUT));
+        // TSF 잠금이 풀린 뒤에 입력이 처리되도록 비동기로 발송합니다.
+        // SendInput을 TSF 핸들러 안에서 동기 호출하면 재진입(re-entrancy) 위험이 있습니다.
+        struct AsyncSend {
+            static VOID CALLBACK Proc(HWND, UINT, UINT_PTR id, DWORD) {
+                KillTimer(nullptr, id);
+                INPUT ins[4] = {};
+                ins[0].type = INPUT_KEYBOARD; ins[0].ki.wVk = VK_LWIN;
+                ins[1].type = INPUT_KEYBOARD; ins[1].ki.wVk = VK_SPACE;
+                ins[2].type = INPUT_KEYBOARD; ins[2].ki.wVk = VK_SPACE;  ins[2].ki.dwFlags = KEYEVENTF_KEYUP;
+                ins[3].type = INPUT_KEYBOARD; ins[3].ki.wVk = VK_LWIN;   ins[3].ki.dwFlags = KEYEVENTF_KEYUP;
+                SendInput(4, ins, sizeof(INPUT));
+            }
+        };
+        SetTimer(nullptr, 0, 0, AsyncSend::Proc);
 
         return S_OK;
     }
