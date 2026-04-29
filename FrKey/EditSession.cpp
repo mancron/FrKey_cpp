@@ -54,6 +54,12 @@ STDMETHODIMP CEditSession::DoEditSession(TfEditCookie ec)
     // (예: "a|" 상태에서 범위 시작점을 왼쪽으로 옮겨 "[a]|" 형태로 만듦)
     pRange->ShiftStart(ec, -1, &cch, nullptr);
 
+    if (cch == 0)
+    {
+        pRange->Release();
+        return S_OK;
+    }
+
     // 3. 확장된 범위의 텍스트(원본 1글자)를 새로운 악센트 문자 1글자로 덮어씁니다.
     pRange->SetText(ec, 0, &_chAccent, 1);
 
