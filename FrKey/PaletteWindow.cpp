@@ -1,4 +1,4 @@
-#include "PaletteWindow.h"
+﻿#include "PaletteWindow.h"
 
 const wchar_t* WINDOW_CLASS_NAME = L"FrKeyPaletteClass";
 HINSTANCE g_hInstPalette = nullptr;
@@ -7,7 +7,7 @@ bool CPaletteWindow::Initialize(HINSTANCE hInstance)
 {
     g_hInstPalette = hInstance;
     WNDCLASSEXW wcex = { sizeof(WNDCLASSEX) };
-    wcex.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW; // �׸��� ȿ��
+    wcex.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW; // 그림자 효과
     wcex.lpfnWndProc = WndProc;
     wcex.hInstance = hInstance;
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
@@ -47,6 +47,7 @@ void CPaletteWindow::Show(int x, int y, const std::wstring& options)
 
     if (!_hWnd)
     {
+        // ★ 팩트 체크: WS_EX_NOACTIVATE 플래그가 없으면 포커스를 뺏겨 TSF 세션이 붕괴됩니다.
         _hWnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
             WINDOW_CLASS_NAME, nullptr,
@@ -55,6 +56,7 @@ void CPaletteWindow::Show(int x, int y, const std::wstring& options)
             nullptr, nullptr, g_hInstPalette, this);
     }
 
+    // SW_SHOWNOACTIVATE로 띄워야 포커스 유지가 보장됨
     SetWindowPos(_hWnd, HWND_TOPMOST, x, y + 20, winW, winH, SWP_SHOWWINDOW | SWP_NOACTIVATE);
     InvalidateRect(_hWnd, nullptr, TRUE);
 }
@@ -69,7 +71,7 @@ bool CPaletteWindow::IsVisible() const { return _hWnd != nullptr; }
 
 LRESULT CALLBACK CPaletteWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // �� �߰�: â�� ������ �� ��ü �����͸� â�� �޸𸮿� �����մϴ�.
+    // ★ 추가: 창이 생성될 때 객체 포인터를 창의 메모리에 저장합니다.
     if (message == WM_NCCREATE)
     {
         CREATESTRUCT* pCreate = (CREATESTRUCT*)lParam;
@@ -82,11 +84,11 @@ LRESULT CALLBACK CPaletteWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam,
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
 
-        // �����ص� �����͸� ������ ���ڸ� ����մϴ�.
+        // 저장해둔 포인터를 가져와 글자를 출력합니다.
         CPaletteWindow* pThis = (CPaletteWindow*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
         if (pThis && !pThis->_displayOptions.empty())
         {
-            // �� �߰�: ����� �����ϰ�, ���ڻ��� ���������� ���� ����
+            // ★ 추가: 배경을 투명하게, 글자색을 검은색으로 강제 지정
             SetBkMode(hdc, TRANSPARENT);
             SetTextColor(hdc, RGB(0, 0, 0));
 

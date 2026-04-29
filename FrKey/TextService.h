@@ -1,5 +1,5 @@
-#pragma once
-#include <msctf.h> // TSF �ٽ� ���
+﻿#pragma once
+#include <msctf.h> // TSF 핵심 헤더
 #include "PaletteWindow.h"
 
 
@@ -19,9 +19,9 @@ public:
     STDMETHODIMP Activate(ITfThreadMgr* ptim, TfClientId tid);
     STDMETHODIMP Deactivate();
 
-    // ����������������������������������������������������������������������������
-    // ITfKeyEventSink (Ű���� �̺�Ʈ ����ä��)
-    // ����������������������������������������������������������������������������
+    // ──────────────────────────────────────
+    // ITfKeyEventSink (키보드 이벤트 가로채기)
+    // ──────────────────────────────────────
     STDMETHODIMP OnSetFocus(BOOL fForeground);
     STDMETHODIMP OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
     STDMETHODIMP OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
