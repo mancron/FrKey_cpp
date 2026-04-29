@@ -127,13 +127,10 @@ STDMETHODIMP CTextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM 
     *pfEaten = FALSE;
 
 
+    if (wParam == 0x15)
     {
-        UINT sc = (lParam >> 16) & 0xFF;
-        if (wParam == 0x15 || wParam == VK_DECIMAL || sc == 110)
-        {
-            *pfEaten = TRUE;
-            return S_OK;
-        }
+        *pfEaten = TRUE;
+        return S_OK;
     }
 
     if (_palette.IsVisible())
@@ -149,29 +146,26 @@ STDMETHODIMP CTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lPar
 {
     *pfEaten = FALSE;
 
-    // ── 0. 한/영 키(VK_HANGUL) 또는 텐키 .(VK_DECIMAL / 스캔코드 110) 감지 → Win+Space 스푸핑 ──
-    // VK_DECIMAL 외에 스캔코드 110도 함께 확인 — 키보드 레이아웃에 따라 VK가 달라질 수 있음
+    // ── 0. 한/영 키(VK_HANGUL) 감지 → Win+Space 스푸핑으로 IME 전환 ──
+    // 텐키 . 키는 PreserveKey(OnPreservedKey)에서 악센트 팔레트로 처리
+    if (wParam == 0x15)
     {
-        UINT sc = (lParam >> 16) & 0xFF;
-        if (wParam == 0x15 || wParam == VK_DECIMAL || sc == 110)
-        {
-            *pfEaten = TRUE;
+        *pfEaten = TRUE;
 
-            struct AsyncSend {
-                static VOID CALLBACK Proc(HWND, UINT, UINT_PTR id, DWORD) {
-                    KillTimer(nullptr, id);
-                    INPUT ins[4] = {};
-                    ins[0].type = INPUT_KEYBOARD; ins[0].ki.wVk = VK_LWIN;
-                    ins[1].type = INPUT_KEYBOARD; ins[1].ki.wVk = VK_SPACE;
-                    ins[2].type = INPUT_KEYBOARD; ins[2].ki.wVk = VK_SPACE;  ins[2].ki.dwFlags = KEYEVENTF_KEYUP;
-                    ins[3].type = INPUT_KEYBOARD; ins[3].ki.wVk = VK_LWIN;   ins[3].ki.dwFlags = KEYEVENTF_KEYUP;
-                    SendInput(4, ins, sizeof(INPUT));
-                }
-            };
-            SetTimer(nullptr, 0, 0, AsyncSend::Proc);
+        struct AsyncSend {
+            static VOID CALLBACK Proc(HWND, UINT, UINT_PTR id, DWORD) {
+                KillTimer(nullptr, id);
+                INPUT ins[4] = {};
+                ins[0].type = INPUT_KEYBOARD; ins[0].ki.wVk = VK_LWIN;
+                ins[1].type = INPUT_KEYBOARD; ins[1].ki.wVk = VK_SPACE;
+                ins[2].type = INPUT_KEYBOARD; ins[2].ki.wVk = VK_SPACE;  ins[2].ki.dwFlags = KEYEVENTF_KEYUP;
+                ins[3].type = INPUT_KEYBOARD; ins[3].ki.wVk = VK_LWIN;   ins[3].ki.dwFlags = KEYEVENTF_KEYUP;
+                SendInput(4, ins, sizeof(INPUT));
+            }
+        };
+        SetTimer(nullptr, 0, 0, AsyncSend::Proc);
 
-            return S_OK;
-        }
+        return S_OK;
     }
 
     // ── 1. 팔레트가 열려있을 때 숫자 키(1~9) 선택 처리 ──
@@ -283,28 +277,46 @@ STDMETHODIMP CTextService::OnKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lParam
 
 STDMETHODIMP CTextService::OnPreservedKey(ITfContext* pic, REFGUID rguid, BOOL* pfEaten)
 {
+    *pfEaten = FALSE;
+
     if (IsEqualGUID(rguid, GUID_KEY_DECIMAL_SWITCH))
     {
-        *pfEaten = TRUE;
+        // 텐키 . = 한자 키 대체 → 악센트 팔레트 표시 (OnKeyDown의 0x19 로직과 동일)
+        std::wstring options;
+        switch (_lastChar)
+        {
+        case L'a': _currentAccents = L"àâäæ";  options = L"1:à 2:â 3:ä 4:æ"; break;
+        case L'e': _currentAccents = L"éèêëœ"; options = L"1:é 2:è 3:ê 4:ë 5:œ"; break;
+        case L'i': _currentAccents = L"îï";    options = L"1:î 2:ï"; break;
+        case L'o': _currentAccents = L"ôöœ";   options = L"1:ô 2:ö 3:œ"; break;
+        case L'u': _currentAccents = L"ùûü";   options = L"1:ù 2:û 3:ü"; break;
+        case L'c': _currentAccents = L"ç";     options = L"1:ç"; break;
+        case L'A': _currentAccents = L"ÀÂÄÆ";  options = L"1:À 2:Â 3:Ä 4:Æ"; break;
+        case L'E': _currentAccents = L"ÉÈÊËŒ"; options = L"1:É 2:È 3:Ê 4:Ë 5:Œ"; break;
+        case L'I': _currentAccents = L"ÎÏ";    options = L"1:Î 2:Ï"; break;
+        case L'O': _currentAccents = L"ÔÖŒ";   options = L"1:Ô 2:Ö 3:Œ"; break;
+        case L'U': _currentAccents = L"ÙÛÜ";   options = L"1:Ù 2:Û 3:Ü"; break;
+        case L'C': _currentAccents = L"Ç";     options = L"1:Ç"; break;
+        default:
+            return S_OK;  // 매칭 없으면 키 통과
+        }
 
-        // OnKeyDown의 한/영 키 처리와 동일하게 비동기로 Win+Space 발송
-        struct AsyncSend {
-            static VOID CALLBACK Proc(HWND, UINT, UINT_PTR id, DWORD) {
-                KillTimer(nullptr, id);
-                INPUT ins[4] = {};
-                ins[0].type = INPUT_KEYBOARD; ins[0].ki.wVk = VK_LWIN;
-                ins[1].type = INPUT_KEYBOARD; ins[1].ki.wVk = VK_SPACE;
-                ins[2].type = INPUT_KEYBOARD; ins[2].ki.wVk = VK_SPACE; ins[2].ki.dwFlags = KEYEVENTF_KEYUP;
-                ins[3].type = INPUT_KEYBOARD; ins[3].ki.wVk = VK_LWIN;  ins[3].ki.dwFlags = KEYEVENTF_KEYUP;
-                SendInput(4, ins, sizeof(INPUT));
+        if (!options.empty())
+        {
+            RECT rc = { 0 };
+            CReadSession* pReadSession = new CReadSession(pic, &rc);
+            HRESULT hrSession;
+            pic->RequestEditSession(_tid, pReadSession, TF_ES_READ | TF_ES_SYNC, &hrSession);
+            pReadSession->Release();
+
+            if (rc.left != 0 || rc.bottom != 0)
+            {
+                _palette.Show(rc.left, rc.bottom, options);
+                *pfEaten = TRUE;
             }
-        };
-        SetTimer(nullptr, 0, 0, AsyncSend::Proc);
+        }
     }
-    else
-    {
-        *pfEaten = FALSE;
-    }
+
     return S_OK;
 }
 
