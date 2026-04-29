@@ -303,17 +303,35 @@ STDMETHODIMP CTextService::OnPreservedKey(ITfContext* pic, REFGUID rguid, BOOL* 
 
         if (!options.empty())
         {
-            RECT rc = { 0 };
-            CReadSession* pReadSession = new CReadSession(pic, &rc);
-            HRESULT hrSession;
-            pic->RequestEditSession(_tid, pReadSession, TF_ES_READ | TF_ES_SYNC, &hrSession);
-            pReadSession->Release();
+            int posX = 0, posY = 0;
 
-            if (rc.left != 0 || rc.bottom != 0)
+            // 텍스트 커서 위치 시도 (pic이 유효할 때만)
+            if (pic)
             {
-                _palette.Show(rc.left, rc.bottom, options);
-                *pfEaten = TRUE;
+                RECT rc = { 0 };
+                CReadSession* pReadSession = new CReadSession(pic, &rc);
+                HRESULT hrSession;
+                pic->RequestEditSession(_tid, pReadSession, TF_ES_READ | TF_ES_SYNC, &hrSession);
+                pReadSession->Release();
+
+                if (rc.left != 0 || rc.bottom != 0)
+                {
+                    posX = rc.left;
+                    posY = rc.bottom;
+                }
             }
+
+            // 커서 위치를 못 구하면 마우스 포인터 위치에 팔레트 표시
+            if (posX == 0 && posY == 0)
+            {
+                POINT pt;
+                GetCursorPos(&pt);
+                posX = pt.x;
+                posY = pt.y;
+            }
+
+            _palette.Show(posX, posY, options);
+            *pfEaten = TRUE;
         }
     }
 
