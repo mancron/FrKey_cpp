@@ -84,6 +84,18 @@ BOOL CTextService::_InitKeyEventSink()
     {
         // 시스템에 이 객체를 키보드 이벤트 수신기로 등록
         hr = pKeystrokeMgr->AdviseKeyEventSink(_tid, (ITfKeyEventSink*)this, TRUE);
+
+        // 텐키 . 키를 PreserveKey로 등록
+        // OnKeyDown 경로는 한국어 입력 프레임워크에 가로채여 VK_DECIMAL이 도달 안 할 수 있으므로
+        // PreserveKey를 쓰면 TSF가 OnPreservedKey를 통해 확실하게 전달해 줌
+        if (SUCCEEDED(hr))
+        {
+            TF_PRESERVEDKEY tfKey = { VK_DECIMAL, TF_MOD_IGNORE_ALL_MODIFIER };
+            const WCHAR szDesc[] = L"IME Switch (Numpad .)";
+            pKeystrokeMgr->PreserveKey(_tid, GUID_KEY_DECIMAL_SWITCH,
+                                       &tfKey, szDesc, (ULONG)wcslen(szDesc));
+        }
+
         pKeystrokeMgr->Release();
     }
     return SUCCEEDED(hr);
@@ -98,6 +110,8 @@ void CTextService::_UninitKeyEventSink()
 
     if (SUCCEEDED(hr))
     {
+        TF_PRESERVEDKEY tfKey = { VK_DECIMAL, TF_MOD_IGNORE_ALL_MODIFIER };
+        pKeystrokeMgr->UnpreserveKey(GUID_KEY_DECIMAL_SWITCH, &tfKey);
         pKeystrokeMgr->UnadviseKeyEventSink(_tid);
         pKeystrokeMgr->Release();
     }
@@ -132,9 +146,9 @@ STDMETHODIMP CTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lPar
 {
     *pfEaten = FALSE;
 
-    // ── 0. 한/영 키(VK_HANGUL) 감지 → MS 기본 입력기로 탈출 ──
-// ── 0. 한/영 키(VK_HANGUL) 감지 → 하드웨어 레벨 단축키(Win+Space) 스푸핑 ──
-    if (wParam == 0x15)
+    // ── 0. 한/영 키(VK_HANGUL) 또는 텐키 .(VK_DECIMAL) 감지 → Win+Space 스푸핑으로 IME 전환 ──
+    // 코파일럿 키 탑재 노트북처럼 한/영 키가 없는 경우 텐키의 . 키를 대체 수단으로 사용
+    if (wParam == 0x15 || wParam == VK_DECIMAL)
     {
         // 1. 현재 눌린 한/영 키는 대상 앱에 가지 않도록 우리가 먹어치웁니다.
         *pfEaten = TRUE;
@@ -287,7 +301,28 @@ STDMETHODIMP CTextService::OnKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lParam
 
 STDMETHODIMP CTextService::OnPreservedKey(ITfContext* pic, REFGUID rguid, BOOL* pfEaten)
 {
-    *pfEaten = FALSE;
+    if (IsEqualGUID(rguid, GUID_KEY_DECIMAL_SWITCH))
+    {
+        *pfEaten = TRUE;
+
+        // OnKeyDown의 한/영 키 처리와 동일하게 비동기로 Win+Space 발송
+        struct AsyncSend {
+            static VOID CALLBACK Proc(HWND, UINT, UINT_PTR id, DWORD) {
+                KillTimer(nullptr, id);
+                INPUT ins[4] = {};
+                ins[0].type = INPUT_KEYBOARD; ins[0].ki.wVk = VK_LWIN;
+                ins[1].type = INPUT_KEYBOARD; ins[1].ki.wVk = VK_SPACE;
+                ins[2].type = INPUT_KEYBOARD; ins[2].ki.wVk = VK_SPACE; ins[2].ki.dwFlags = KEYEVENTF_KEYUP;
+                ins[3].type = INPUT_KEYBOARD; ins[3].ki.wVk = VK_LWIN;  ins[3].ki.dwFlags = KEYEVENTF_KEYUP;
+                SendInput(4, ins, sizeof(INPUT));
+            }
+        };
+        SetTimer(nullptr, 0, 0, AsyncSend::Proc);
+    }
+    else
+    {
+        *pfEaten = FALSE;
+    }
     return S_OK;
 }
 

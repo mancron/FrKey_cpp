@@ -14,3 +14,6 @@ extern LONG g_cRefDll;
 
 
 extern const GUID GUID_PROFILE_FRKEY;
+
+// PreserveKey로 등록할 텐키 . 키의 고유 식별자
+extern const GUID GUID_KEY_DECIMAL_SWITCH;

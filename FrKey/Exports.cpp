@@ -100,6 +100,9 @@ STDAPI DllCanUnloadNow(void)
 // Globals.h에 선언한 프로필 GUID 실제 값 할당 (반드시 본인만의 GUID로 변경)
 const GUID GUID_PROFILE_FRKEY = { 0x4e928bee, 0x5c6b, 0x46a3, { 0x83, 0x3b, 0x22, 0xd6, 0x29, 0xb7, 0xe, 0xbf } };
 
+// 텐키 . 키를 PreserveKey로 등록할 때 사용하는 고유 식별자
+const GUID GUID_KEY_DECIMAL_SWITCH = { 0xa1b2c3d4, 0xe5f6, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90 } };
+
 
 // 레지스트리 키 쓰기 헬퍼 함수
 BOOL SetRegKey(HKEY hKeyRoot, LPCWSTR pszSubKey, LPCWSTR pszValueName, LPCWSTR pszData)
