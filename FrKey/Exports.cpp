@@ -2,6 +2,8 @@
 #include "Globals.h"
 #include "TextService.h"
 #include <msctf.h>
+#include <shlobj.h>   // SHGetKnownFolderPath
+#include <strsafe.h>  // StringCchCopyW
 
 LONG g_cRefDll = 0; // 전역 참조 카운트 초기화
 
@@ -116,12 +118,32 @@ BOOL SetRegKey(HKEY hKeyRoot, LPCWSTR pszSubKey, LPCWSTR pszValueName, LPCWSTR p
 // ──────────────────────────────────────
 STDAPI DllRegisterServer(void)
 {
-    WCHAR szModulePath[MAX_PATH];
-    GetModuleFileNameW(g_hInst, szModulePath, MAX_PATH);
+    // ── DLL을 고정 경로(%ProgramData%\FrKey\)에 복사 ──
+    // 이렇게 하면 원본 DLL을 어디로 옮겨도 재등록이 불필요합니다.
+    WCHAR szModulePath[MAX_PATH] = {};  // 복사 대상 경로 (고정)
+    {
+        PWSTR pszProgramData = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr, &pszProgramData)))
+        {
+            // %ProgramData%\FrKey\ 폴더 생성
+            std::wstring destDir = std::wstring(pszProgramData) + L"\\FrKey";
+            CreateDirectoryW(destDir.c_str(), nullptr);
 
-    // 1. COM 레지스트리 등록 (시스템이 DLL 경로를 찾을 수 있게 함)
-    // 참고: CLSID 문자열 변환은 간략화를 위해 하드코딩 형태로 가정 (실제로는 StringFromGUID2 등 사용 권장)
-    // 여기서는 문자열 포맷팅으로 처리합니다.
+            // 복사 대상 전체 경로
+            std::wstring destPath = destDir + L"\\FrKey.dll";
+            StringCchCopyW(szModulePath, MAX_PATH, destPath.c_str());
+
+            // 현재 DLL → 고정 위치로 복사 (덮어쓰기)
+            WCHAR szSrcPath[MAX_PATH];
+            GetModuleFileNameW(g_hInst, szSrcPath, MAX_PATH);
+            CopyFileW(szSrcPath, szModulePath, FALSE);
+
+            CoTaskMemFree(pszProgramData);
+        }
+    }
+    if (szModulePath[0] == L'\0') return E_FAIL;  // 복사 실패 시 중단
+
+    // 1. COM 레지스트리 등록 — 고정 경로로 등록하므로 이후 원본을 옮겨도 무관
     WCHAR szCLSID[100];
     StringFromGUID2(CLSID_FrKeyIME, szCLSID, 100);
 
@@ -137,7 +159,7 @@ STDAPI DllRegisterServer(void)
         // 텍스트 서비스로 등록
         pProfiles->Register(CLSID_FrKeyIME);
 
-        // 한국어(0x0412) 하위 프로필로 등록
+        // 한국어(0x0412) 하위 프로필로 등록 — QWERTY 레이아웃을 유지하면서 프랑스어 악센트 입력
         WCHAR szDesc[] = L"French Accent IME";
         pProfiles->AddLanguageProfile(CLSID_FrKeyIME, 0x0412, GUID_PROFILE_FRKEY, szDesc, (ULONG)wcslen(szDesc), szModulePath, (ULONG)wcslen(szModulePath), 0);
         pProfiles->EnableLanguageProfile(CLSID_FrKeyIME, 0x0412, GUID_PROFILE_FRKEY, TRUE);
@@ -202,6 +224,17 @@ STDAPI DllUnregisterServer(void)
 
     RegDeleteKeyW(HKEY_CLASSES_ROOT, (keyPath + L"\\InprocServer32").c_str());
     RegDeleteKeyW(HKEY_CLASSES_ROOT, keyPath.c_str());
+
+    // 3. %ProgramData%\FrKey\에 복사해 둔 DLL 및 폴더 삭제
+    PWSTR pszProgramData = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr, &pszProgramData)))
+    {
+        std::wstring destDir  = std::wstring(pszProgramData) + L"\\FrKey";
+        std::wstring destFile = destDir + L"\\FrKey.dll";
+        DeleteFileW(destFile.c_str());
+        RemoveDirectoryW(destDir.c_str());  // 폴더가 비어있을 때만 삭제됨
+        CoTaskMemFree(pszProgramData);
+    }
 
     return S_OK;
 }
